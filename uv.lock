@@ -581,6 +581,7 @@ name = "tw-account"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "email-validator" },
     { name = "fastapi", extra = ["standard"] },
     { name = "platformdirs" },
     { name = "psycopg" },
@@ -591,6 +592,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
     { name = "platformdirs", specifier = ">=4.4.0" },
     { name = "psycopg", specifier = ">=3.2.10" },

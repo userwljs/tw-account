@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Literal
 
 import platformdirs
 from pydantic import BaseModel
@@ -8,6 +8,14 @@ from pydantic import BaseModel
 class Config(BaseModel):
     db_conn_scheme: str
     email_verification_code_lifespan: float = 300.0
+    restrict_email_domains: Literal["no", "blacklist", "whitelist"] = "whitelist"
+    restricted_email_domains: set[str] = {
+        "qq.com",
+        "163.com",
+        "126.com",
+        "gmail.com",
+        "outlook.com",
+    }
 
 
 _config: Optional[Config] = None
