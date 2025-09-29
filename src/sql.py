@@ -1,18 +1,13 @@
 from typing import List, Literal
 
-from sqlalchemy import ForeignKey, Integer, String, create_engine
+from sqlalchemy import ForeignKey, Integer, String
+
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
     relationship,
-    sessionmaker,
 )
-
-from .config import get_config
-
-engine = create_engine(get_config().db_conn_scheme)
-the_session_maker = sessionmaker(engine)
 
 
 class Base(DeclarativeBase):

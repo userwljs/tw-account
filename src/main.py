@@ -1,8 +1,9 @@
 import datetime
 from typing import Annotated, Literal
-
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine
 import pyotp
 from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
 from fastapi.requests import Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -10,11 +11,29 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 import random
-from .sql import Account, Base, EmailVerificationCode, engine, the_session_maker
+from .sql import (
+    Account,
+    Base,
+    EmailVerificationCode,
+)
 from .config import get_config
 
+engine: AsyncEngine = None
+session_maker: async_sessionmaker = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global engine, session_maker
+    engine = create_async_engine(get_config().db_conn_scheme)
+    session_maker = async_sessionmaker(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -39,20 +58,20 @@ class AccountRegistration(BaseModel):
     verify_code: Annotated[str, Field(min_length=6, max_length=6)]
 
 
-def validate_email_and_consume_code(email: str, request_code: str) -> bool:
-    with the_session_maker() as session:
-        code = session.get(EmailVerificationCode, email)
+async def validate_email_and_consume_code(email: str, request_code: str) -> bool:
+    async with session_maker() as session:
+        code = await session.get(EmailVerificationCode, email)
         if code is None:
             return False
         if code.expire < datetime.datetime.now().timestamp():
-            session.delete(code)
-            session.commit()
+            await session.delete(code)
+            await session.commit()
             return False
         if request_code != code.code:
             return False
 
-        session.delete(code)
-        session.commit()
+        await session.delete(code)
+        await session.commit()
         return True
 
 
@@ -60,7 +79,7 @@ def validate_email_and_consume_code(email: str, request_code: str) -> bool:
     "/send_email_verification_code", responses={400: {"description": "请求被拒绝"}}
 )
 @limiter.limit("10/hour")
-def send_email_verification_code(request: Request, email: Email):
+async def send_email_verification_code(request: Request, email: Email):
     email_string = email.to_string()
     code: str = "".join(random.choices(EMAIL_VERIFICATION_CODE_ALPHABET, k=6))
     print(f"生成邮件验证码：{email_string}：{code}")  # TODO
@@ -70,28 +89,25 @@ def send_email_verification_code(request: Request, email: Email):
         expire=datetime.datetime.now().timestamp()
         + get_config().email_verification_code_lifespan,
     )
-    with the_session_maker() as session:
-        exist = session.get(EmailVerificationCode, email_string)
+    async with session_maker() as session:
+        exist = await session.get(EmailVerificationCode, email_string)
         if exist is not None:
-            session.delete(exist)
+            await session.delete(exist)
         session.add(code_item)
-        session.commit()
+        await session.commit()
 
 
 @app.post("/account/register", responses={400: {"description": "请求被拒绝"}})
 @limiter.limit("10/hour")
-def register_account(request: Request, account: AccountRegistration):
-    with the_session_maker() as session:
+async def register_account(request: Request, account: AccountRegistration):
+    async with session_maker() as session:
         email: str = account.email.to_string()
         if (
-            session.execute(
-                select(Account).where(Account.email == email)
-            ).scalar_one_or_none()
-            is not None
-        ):
+            await session.execute(select(Account).where(Account.email == email))
+        ).scalar_one_or_none() is not None:
             raise HTTPException(400, detail="此账户已存在")
 
-        if not validate_email_and_consume_code(email, account.verify_code):
+        if not await validate_email_and_consume_code(email, account.verify_code):
             raise HTTPException(400, detail="验证码错误")
 
         new_account = Account(
@@ -100,12 +116,10 @@ def register_account(request: Request, account: AccountRegistration):
 
         session.add(new_account)
 
-        session.commit()
+        await session.commit()
 
 
 def main():
-    Base.metadata.create_all(engine)
-
     import uvicorn
 
     uvicorn.run(app, port=8080)
