@@ -1,11 +1,10 @@
 import datetime
-from typing import Annotated, Self, Literal
+from .models import EmailDomainRestrictionInfo, Config
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine
 import pyotp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Body
 from contextlib import asynccontextmanager
 from fastapi.requests import Request
-from pydantic import BaseModel, Field, EmailStr, model_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -17,15 +16,20 @@ from .sql import (
     EmailVerificationCode,
 )
 from .config import get_config
+from pydantic import EmailStr, Field
+from typing import Annotated
 
 engine: AsyncEngine = None
 session_maker: async_sessionmaker = None
 
+config: Config = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global engine, session_maker
-    engine = create_async_engine(get_config().db_conn_scheme)
+    global engine, session_maker, config
+    config = get_config()
+    engine = create_async_engine(config.db_conn_scheme)
     session_maker = async_sessionmaker(engine)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -37,45 +41,26 @@ app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-EMAIL_VERIFICATION_CODE_ALPHABET = (
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-)
-# 去除：数字 0、大写 I、大写 O、小写 l
 
-
-class Email(BaseModel):
-    string: EmailStr
-
-    @model_validator(mode="after")
-    def check_email_domain(self) -> Self:
-        if get_config().restrict_email_domains == "no":
-            return self
-        domain = self.string.split("@")[-1]
-        if get_config().restrict_email_domains == "blacklist":
-            if domain in get_config().restricted_email_domains:
-                raise ValueError("邮箱域名处于黑名单中")
-        if get_config().restrict_email_domains == "whitelist":
-            if domain not in get_config().restricted_email_domains:
-                raise ValueError("邮箱域名不处于白名单中")
-        return self
-
-
-class EmailDomainRestrictionInfo(BaseModel):
-    restrict_email_domains: Literal["no", "blacklist", "whitelist"]
-    restricted_email_domains: list[str]
+async def validated_email(email: Annotated[EmailStr, Body(embed=True)]) -> str:
+    if config.restrict_email_domains == "no":
+        return email
+    domain = email.split("@")[-1]
+    if config.restrict_email_domains == "blacklist":
+        if domain in config.restricted_email_domains:
+            raise HTTPException(400, detail="邮箱域名处于黑名单中")
+    if config.restrict_email_domains == "whitelist":
+        if domain not in config.restricted_email_domains:
+            raise HTTPException(400, detail="邮箱域名不处于白名单中")
+    return email
 
 
 @app.get("/email/domain_restriction_info", response_model=EmailDomainRestrictionInfo)
 async def email_domain_restriction_info():
     return EmailDomainRestrictionInfo(
-        restrict_email_domains=get_config().restrict_email_domains,
-        restricted_email_domains=list(get_config().restricted_email_domains),
+        restrict_email_domains=config.restrict_email_domains,
+        restricted_email_domains=list(config.restricted_email_domains),
     )
-
-
-class AccountRegistration(BaseModel):
-    email: Email
-    verify_code: Annotated[str, Field(min_length=6, max_length=6)]
 
 
 async def validate_email_and_consume_code(email: str, request_code: str) -> bool:
@@ -99,17 +84,19 @@ async def validate_email_and_consume_code(email: str, request_code: str) -> bool
     "/email/send_verification_code", responses={400: {"description": "请求被拒绝"}}
 )
 @limiter.limit("10/hour")
-async def email_send_verification_code(request: Request, email: Email):
-    code: str = "".join(random.choices(EMAIL_VERIFICATION_CODE_ALPHABET, k=6))
-    print(f"生成邮件验证码：{email.string}：{code}")  # TODO
+async def email_send_verification_code(
+    request: Request, email: Annotated[str, Depends(validated_email)]
+):
+    code: str = "".join(random.choices(config.email_verification_code_alphabet, k=6))
+    print(f"生成邮件验证码：{email}：{code}")  # TODO
     code_item = EmailVerificationCode(
-        email=email.string,
+        email=email,
         code=code,
         expire=datetime.datetime.now().timestamp()
-        + get_config().email_verification_code_lifespan,
+        + config.email_verification_code_lifespan,
     )
     async with session_maker() as session:
-        exist = await session.get(EmailVerificationCode, email.string)
+        exist = await session.get(EmailVerificationCode, email)
         if exist is not None:
             await session.delete(exist)
         session.add(code_item)
@@ -118,15 +105,18 @@ async def email_send_verification_code(request: Request, email: Email):
 
 @app.post("/account/register", responses={400: {"description": "请求被拒绝"}})
 @limiter.limit("10/hour")
-async def register_account(request: Request, account: AccountRegistration):
+async def register_account(
+    request: Request,
+    email: Annotated[str, Depends(validated_email)],
+    verify_code: Annotated[str, Field(min_length=6, max_length=6), Body(embed=True)],
+):
     async with session_maker() as session:
-        email: str = account.email.string
         if (
             await session.execute(select(Account).where(Account.email == email))
         ).scalar_one_or_none() is not None:
             raise HTTPException(400, detail="此账户已存在")
 
-        if not await validate_email_and_consume_code(email, account.verify_code):
+        if not await validate_email_and_consume_code(email, verify_code):
             raise HTTPException(400, detail="验证码错误")
 
         new_account = Account(

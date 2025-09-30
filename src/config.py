@@ -1,21 +1,10 @@
 import os
-from typing import Optional, Literal
+from typing import Optional
 
 import platformdirs
-from pydantic import BaseModel
 
 
-class Config(BaseModel):
-    db_conn_scheme: str
-    email_verification_code_lifespan: float = 300.0
-    restrict_email_domains: Literal["no", "blacklist", "whitelist"] = "whitelist"
-    restricted_email_domains: set[str] = {
-        "qq.com",
-        "163.com",
-        "126.com",
-        "gmail.com",
-        "outlook.com",
-    }
+from .models import Config
 
 
 _config: Optional[Config] = None
@@ -25,11 +14,11 @@ def get_config() -> Config:
     global _config
     if _config is not None:
         return _config
-    reload_config()
+    _load_config()
     return _config
 
 
-def reload_config():
+def _load_config():
     global _config
     data_path = os.getenv(
         "TW_ACCOUNT_DATA_PATH", platformdirs.user_data_path("tw-account")
