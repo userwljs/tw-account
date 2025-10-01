@@ -43,7 +43,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-async def validated_email(email: Annotated[EmailStr, Body(embed=True)]) -> str:
+async def allowed_email(email: Annotated[EmailStr, Body(embed=True)]) -> str:
     if config.restrict_email_domains == "no":
         return email
     domain = email.split("@")[-1]
@@ -86,7 +86,7 @@ async def validate_email_and_consume_code(email: str, request_code: str) -> bool
 )
 @limiter.limit("10/hour")
 async def email_send_verification_code(
-    request: Request, email: Annotated[str, Depends(validated_email)]
+    request: Request, email: Annotated[str, Depends(allowed_email)]
 ):
     code: str = "".join(random.choices(config.email_verification_code_alphabet, k=6))
     print(f"生成邮件验证码：{email}：{code}")  # TODO
@@ -108,7 +108,7 @@ async def email_send_verification_code(
 @limiter.limit("10/hour")
 async def register_account(
     request: Request,
-    email: Annotated[str, Depends(validated_email)],
+    email: Annotated[str, Depends(allowed_email)],
     verify_code: Annotated[str, Field(min_length=6, max_length=6), Body(embed=True)],
 ):
     async with session_maker() as session:
