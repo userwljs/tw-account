@@ -1,7 +1,7 @@
+import uuid
 from typing import List, Literal
 
-from sqlalchemy import ForeignKey, Integer, String
-
+from sqlalchemy import UUID, ForeignKey, String
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -17,7 +17,9 @@ class Base(DeclarativeBase):
 class Account(Base):
     __tablename__ = "account"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     email: Mapped[str] = mapped_column(String(129), unique=True, nullable=False)
     totp_secret: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[Literal["NORMAL", "DELETED", "DISABLED"]] = mapped_column(
