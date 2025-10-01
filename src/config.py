@@ -3,9 +3,7 @@ from typing import Optional
 
 import platformdirs
 
-
 from .models import Config
-
 
 _config: Optional[Config] = None
 

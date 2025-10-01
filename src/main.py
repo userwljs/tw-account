@@ -1,23 +1,25 @@
 import datetime
-from .models import EmailDomainRestrictionInfo, Config
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine
-import pyotp
-from fastapi import FastAPI, HTTPException, Depends, Body
+import random
 from contextlib import asynccontextmanager
+from typing import Annotated
+
+import pyotp
+from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.requests import Request
+from pydantic import EmailStr, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import select
-import random
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+
+from .config import get_config
+from .models import Config, EmailDomainRestrictionInfo
 from .sql import (
     Account,
     Base,
     EmailVerificationCode,
 )
-from .config import get_config
-from pydantic import EmailStr, Field
-from typing import Annotated
 
 engine: AsyncEngine = None
 session_maker: async_sessionmaker = None

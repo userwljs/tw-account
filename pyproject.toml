@@ -16,3 +16,8 @@ dependencies = [
 
 [tool.setuptools.package-dir]
 "tw_account" = "src"
+
+[tool.ruff.lint]
+select = [
+    "I", # isort
+]
