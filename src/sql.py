@@ -21,7 +21,6 @@ class Account(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     email: Mapped[str] = mapped_column(String(129), unique=True, nullable=False)
-    totp_secret: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[Literal["NORMAL", "DELETED", "DISABLED"]] = mapped_column(
         String(32), nullable=False
     )

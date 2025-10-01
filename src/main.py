@@ -3,7 +3,6 @@ import random
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import pyotp
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.requests import Request
 from pydantic import EmailStr, Field
@@ -121,9 +120,7 @@ async def register_account(
         if not await validate_email_and_consume_code(email, verify_code):
             raise HTTPException(400, detail="验证码错误")
 
-        new_account = Account(
-            email=email, totp_secret=pyotp.random_base32(), status="NORMAL"
-        )
+        new_account = Account(email=email, status="NORMAL")
 
         session.add(new_account)
 
