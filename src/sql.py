@@ -23,7 +23,7 @@ class Account(Base):
     email: Mapped[str] = mapped_column(String(129), unique=True, nullable=False)
     totp_secret: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[Literal["NORMAL", "DELETED", "DISABLED"]] = mapped_column(
-        String, nullable=False
+        String(32), nullable=False
     )
     characters: Mapped[List["Character"]] = relationship(back_populates="owner")
 
