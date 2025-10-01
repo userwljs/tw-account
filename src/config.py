@@ -1,11 +1,17 @@
 import os
-from typing import Optional
 
 import platformdirs
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .models import Config
 
-_config: Optional[Config] = None
+_config: Config = None
+_session_maker: async_sessionmaker = None
+
+limiter: Limiter = Limiter(key_func=get_remote_address)
 
 
 def get_config() -> Config:
@@ -14,6 +20,15 @@ def get_config() -> Config:
         return _config
     _load_config()
     return _config
+
+
+def make_session() -> AsyncSession:
+    return _session_maker()
+
+
+def set_session_maker(session_maker: async_sessionmaker):
+    global _session_maker
+    _session_maker = session_maker
 
 
 def _load_config():
