@@ -1,14 +1,22 @@
+import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import Field
+import jwt
+from email_validator import EmailNotValidError
+from email_validator.validate_email import validate_email
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import EmailStr, Field
 from sqlalchemy import select
 
-from ..config import limiter, make_session
+from ..config import get_config, limiter, make_session
+from ..models import Token
 from ..sql import Account
 from .email import allowed_email, verify_email_and_consume_code
 
 router = APIRouter(prefix="/account")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="account/login")
 
 
 @router.post("/register", responses={400: {"description": "请求被拒绝"}})
@@ -32,3 +40,40 @@ async def register_account(
         session.add(new_account)
 
         await session.commit()
+
+
+@router.post("/login")
+@limiter.limit("10/hour")
+async def login(
+    request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+) -> Token:
+    EMAIL_OR_VERIFICATION_CODE_WRONG = "邮箱或验证码错误"
+
+    try:
+        email = validate_email(form_data.username).email
+    except EmailNotValidError:
+        raise HTTPException(400, detail="无效的邮箱地址")
+    await allowed_email(email)  # 检查邮箱域名是否允许
+    async with make_session() as session:
+        account = (
+            await session.execute(select(Account).where(Account.email == email))
+        ).scalar_one_or_none()
+        if account is None:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, detail=EMAIL_OR_VERIFICATION_CODE_WRONG
+            )
+        if not await verify_email_and_consume_code(email, form_data.password):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, detail=EMAIL_OR_VERIFICATION_CODE_WRONG
+            )
+
+        config = get_config()
+        to_encode = {
+            "sub": str(account.id),
+            "exp": datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(seconds=config.access_token_lifespan),
+        }
+        encoded_jwt = jwt.encode(
+            to_encode, config.jwt_es256_private_key, algorithm="ES256"
+        )  # TODO：增强安全性
+        return Token(access_token=encoded_jwt)
