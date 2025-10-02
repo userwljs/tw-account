@@ -30,3 +30,8 @@ class EmailDomainRestrictionInfo(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
+
+
+class AccountInfo(BaseModel):
+    id: str
+    email: str

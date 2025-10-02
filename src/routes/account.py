@@ -10,7 +10,7 @@ from pydantic import Field
 from sqlalchemy import select
 
 from ..config import get_config, limiter, make_session
-from ..models import Token
+from ..models import AccountInfo, Token
 from ..sql import Account
 from .email import allowed_email, verify_email_and_consume_code
 
@@ -77,3 +77,35 @@ async def login(
             to_encode, config.jwt_es256_private_key, algorithm="ES256"
         )  # TODO：增强安全性
         return Token(access_token=encoded_jwt)
+
+
+async def get_current_account(token: Annotated[str, Depends(oauth2_scheme)]):
+    config = get_config()
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="无法验证凭证",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, config.jwt_es256_public_key, algorithms="ES256")
+        id: str = payload.get("sub")
+        async with make_session() as session:
+            account = await session.get(Account, id)
+            if account is None:
+                raise credentials_exception
+            if account.status != "NORMAL":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="账户状态异常",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return account
+    except jwt.InvalidTokenError:
+        raise credentials_exception
+
+
+@router.get("/me/info")
+async def my_info(
+    account: Annotated[Account, Depends(get_current_account)],
+) -> AccountInfo:
+    return AccountInfo(id=str(account.id), email=account.email)
