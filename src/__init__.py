@@ -27,13 +27,3 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(account.router)
 app.include_router(email.router)
-
-
-def main():
-    import uvicorn
-
-    uvicorn.run(app, port=8080)
-
-
-if __name__ == "__main__":
-    main()
