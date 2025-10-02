@@ -1,4 +1,6 @@
 import os
+import sys
+import tomllib
 
 import platformdirs
 from slowapi import Limiter
@@ -37,7 +39,11 @@ def _load_config():
     )
     if not os.path.isdir(data_path):
         os.makedirs(data_path)
-    config_file_path = os.path.join(data_path, "config.json")
+    config_file_path = os.path.join(data_path, "config.toml")
     if not os.path.isfile(config_file_path):
         raise NotImplementedError("设置向导")
-    _config = Config.model_validate_json(open(config_file_path).read())
+    try:
+        _config = Config(**tomllib.load(open(config_file_path, "rb")))
+    except Exception as e:
+        print(f"无法加载配置文件 “{config_file_path}”：{str(e)}")
+        sys.exit(1)

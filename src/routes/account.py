@@ -6,7 +6,7 @@ from email_validator import EmailNotValidError
 from email_validator.validate_email import validate_email
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import EmailStr, Field
+from pydantic import Field
 from sqlalchemy import select
 
 from ..config import get_config, limiter, make_session
