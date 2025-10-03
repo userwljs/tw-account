@@ -3,7 +3,7 @@ import random
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import EmailStr
+from pydantic import EmailStr, Field
 
 from ..config import get_config, limiter, make_session
 from ..models import EmailDomainRestrictionInfo
@@ -29,7 +29,9 @@ async def verify_email_and_consume_code(email: str, request_code: str) -> bool:
         return True
 
 
-async def allowed_email(email: Annotated[EmailStr, Body(embed=True)]) -> str:
+async def allowed_email(
+    email: Annotated[EmailStr, Body(embed=True), Field(max_length=129)],
+) -> str:
     config = get_config()
 
     if config.restrict_email_domains == "no":
