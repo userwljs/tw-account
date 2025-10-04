@@ -31,7 +31,7 @@ class Character(Base):
     __tablename__ = "character"
 
     name: Mapped[str] = mapped_column(String(15), primary_key=True)
-    user_id = mapped_column(ForeignKey("account.id"))
+    user_id = mapped_column(ForeignKey("account.id"), index=True)
     owner: Mapped["Account"] = relationship(back_populates="characters")
 
 
