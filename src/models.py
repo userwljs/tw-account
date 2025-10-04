@@ -20,6 +20,7 @@ class Config(BaseModel):
     jwt_es256_private_key: str
     jwt_es256_public_key: str
     access_token_lifespan: float = 2592000.0  # 30 天
+    root_path: str = ""
 
 
 class EmailDomainRestrictionInfo(BaseModel):
