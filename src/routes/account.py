@@ -68,12 +68,14 @@ async def create_access_token(account_id: str) -> str:
 async def create_refresh_token(
     owner_id: uuid.UUID, expire: float, session: AsyncSession
 ) -> str:
+    lookup_id = uuid.uuid4()
+    token = secrets.token_hex(32)
     token_in_db = RefreshToken(
-        token=secrets.token_hex(32), owner_id=owner_id, expire=expire
+        lookup_id=lookup_id, token=token, owner_id=owner_id, expire=expire
     )
     session.add(token_in_db)
     await session.commit()
-    return f"{token_in_db.lookup_id}.{token_in_db.token}"
+    return f"{lookup_id}.{token}"
 
 
 async def set_refresh_token(response: Response, token_str: str):
@@ -94,12 +96,12 @@ async def rotate_refresh_token(
     :param response: FastAPI Response
     :param refresh_token_in_db: 待轮换的 SQLAlchemy ORM RefreshToken 对象
     :param session: 获取待轮换对象的 AsyncSession"""
-    refresh_token_in_db.lookup_id = uuid.uuid4()
-    refresh_token_in_db.token = secrets.token_hex(32)
+    lookup_id = uuid.uuid4()
+    token = secrets.token_hex(32)
+    refresh_token_in_db.lookup_id = lookup_id
+    refresh_token_in_db.token = token
     await session.commit()
-    await set_refresh_token(
-        response, f"{str(refresh_token_in_db.lookup_id)}.{refresh_token_in_db.token}"
-    )
+    await set_refresh_token(response, f"{str(lookup_id)}.{token}")
 
 
 @router.post("/login")
@@ -128,6 +130,8 @@ async def login(
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED, detail=EMAIL_OR_VERIFICATION_CODE_WRONG
             )
+        if account.status != "NORMAL":
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="账户状态异常")
 
         encoded_jwt = await create_access_token(account.id)
 
@@ -162,8 +166,12 @@ async def refresh_access_token(
             session.delete(target_token)
             await session.commit()
             raise credentials_exception
+        owner = await session.get(Account, target_token.owner_id)
+        if owner is None or owner.status != "NORMAL":
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="账户状态异常")
+        owner_id = str(target_token.owner_id)
         await rotate_refresh_token(response, target_token, session)
-        return Token(access_token=create_access_token(target_token.owner_id))
+        return Token(access_token=await create_access_token(owner_id))
 
 
 async def get_current_account(token: Annotated[str, Depends(oauth2_scheme)]):
