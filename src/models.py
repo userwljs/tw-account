@@ -1,6 +1,8 @@
-from typing import Annotated, Literal
+import uuid
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field
+from fastapi import Cookie
+from pydantic import BaseModel, Field, model_validator
 
 
 class Config(BaseModel):
@@ -19,7 +21,8 @@ class Config(BaseModel):
     )
     jwt_es256_private_key: str
     jwt_es256_public_key: str
-    access_token_lifespan: float = 2592000.0  # 30 天
+    access_token_lifespan: float = 900.0  # 15 分钟
+    refresh_token_lifespan: float = 2592000.0  # 30 天
 
 
 class EmailDomainRestrictionInfo(BaseModel):
@@ -35,3 +38,18 @@ class Token(BaseModel):
 class AccountInfo(BaseModel):
     id: str
     email: str
+
+
+class RefreshTokenInRequest(BaseModel):
+    refresh_token: Annotated[str, Field(min_length=101, max_length=101)]
+
+    @model_validator(mode="after")
+    def check_format(self) -> Self:
+        if self.refresh_token.count(".") != 1:
+            raise ValueError()
+        if self.refresh_token.index(".") != 36:
+            raise ValueError()
+        (lookup_id, token) = self.refresh_token.split(".")
+        uuid.UUID(lookup_id)
+
+        return self

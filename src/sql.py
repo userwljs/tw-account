@@ -31,7 +31,7 @@ class Character(Base):
     __tablename__ = "character"
 
     name: Mapped[str] = mapped_column(String(15), primary_key=True)
-    user_id = mapped_column(ForeignKey("account.id"), index=True)
+    user_id = mapped_column(ForeignKey("account.id"), index=True, nullable=False)
     owner: Mapped["Account"] = relationship(back_populates="characters")
 
 
@@ -41,3 +41,14 @@ class EmailVerificationCode(Base):
     email: Mapped[str] = mapped_column(String(129), primary_key=True)
     code: Mapped[str] = mapped_column(String(6), nullable=False)
     expire: Mapped[float] = mapped_column(nullable=False)  # POSIX timestamp
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_token"
+
+    lookup_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expire: Mapped[float] = mapped_column(nullable=False)
+    owner_id = mapped_column(ForeignKey("account.id"), index=True, nullable=False)

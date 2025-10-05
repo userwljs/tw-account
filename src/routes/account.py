@@ -1,17 +1,29 @@
 import datetime
+import secrets
+import uuid
 from typing import Annotated
 
 import jwt
 from email_validator import EmailNotValidError
 from email_validator.validate_email import validate_email
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Cookie,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_config, limiter, make_session
-from ..models import AccountInfo, Token
-from ..sql import Account
+from ..models import AccountInfo, RefreshTokenInRequest, Token
+from ..sql import Account, RefreshToken
 from .email import allowed_email, verify_email_and_consume_code
 
 router = APIRouter(prefix="/account")
@@ -42,10 +54,60 @@ async def register_account(
         await session.commit()
 
 
+async def create_access_token(account_id: str) -> str:
+    config = get_config()
+    to_encode = {
+        "sub": str(account_id),
+        "exp": datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(seconds=config.access_token_lifespan),
+    }
+    encoded_jwt = jwt.encode(to_encode, config.jwt_es256_private_key, algorithm="ES256")
+    return encoded_jwt
+
+
+async def create_refresh_token(
+    owner_id: uuid.UUID, expire: float, session: AsyncSession
+) -> str:
+    token_in_db = RefreshToken(
+        token=secrets.token_hex(32), owner_id=owner_id, expire=expire
+    )
+    session.add(token_in_db)
+    await session.commit()
+    return f"{token_in_db.lookup_id}.{token_in_db.token}"
+
+
+async def set_refresh_token(response: Response, token_str: str):
+    response.set_cookie(
+        "refresh_token",
+        token_str,
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+async def rotate_refresh_token(
+    response: Response, refresh_token_in_db: RefreshToken, session: AsyncSession
+):
+    """轮换刷新令牌。
+
+    :param response: FastAPI Response
+    :param refresh_token_in_db: 待轮换的 SQLAlchemy ORM RefreshToken 对象
+    :param session: 获取待轮换对象的 AsyncSession"""
+    refresh_token_in_db.lookup_id = uuid.uuid4()
+    refresh_token_in_db.token = secrets.token_hex(32)
+    await session.commit()
+    await set_refresh_token(
+        response, f"{str(refresh_token_in_db.lookup_id)}.{refresh_token_in_db.token}"
+    )
+
+
 @router.post("/login")
 @limiter.limit("10/hour")
 async def login(
-    request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+    request: Request,
+    response: Response,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> Token:
     EMAIL_OR_VERIFICATION_CODE_WRONG = "邮箱或验证码错误"
 
@@ -67,16 +129,41 @@ async def login(
                 status.HTTP_401_UNAUTHORIZED, detail=EMAIL_OR_VERIFICATION_CODE_WRONG
             )
 
-        config = get_config()
-        to_encode = {
-            "sub": str(account.id),
-            "exp": datetime.datetime.now(datetime.timezone.utc)
-            + datetime.timedelta(seconds=config.access_token_lifespan),
-        }
-        encoded_jwt = jwt.encode(
-            to_encode, config.jwt_es256_private_key, algorithm="ES256"
-        )  # TODO：增强安全性
+        encoded_jwt = await create_access_token(account.id)
+
+        refresh_token = await create_refresh_token(
+            account.id,
+            datetime.datetime.now().timestamp() + get_config().refresh_token_lifespan,
+            session,
+        )
+
+        await set_refresh_token(response, refresh_token)
+
         return Token(access_token=encoded_jwt)
+
+
+@router.post("/refresh")
+async def refresh_access_token(
+    response: Response, refresh_token: Annotated[RefreshTokenInRequest, Cookie()]
+) -> Token:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="无法验证凭证",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    (lookup_id, request_token) = refresh_token.refresh_token.split(".")
+    async with make_session() as session:
+        target_token = await session.get(RefreshToken, lookup_id)
+        if (target_token is None) or (
+            not secrets.compare_digest(request_token, target_token.token)
+        ):
+            raise credentials_exception
+        if target_token.expire < datetime.datetime.now().timestamp():
+            session.delete(target_token)
+            await session.commit()
+            raise credentials_exception
+        await rotate_refresh_token(response, target_token, session)
+        return Token(access_token=create_access_token(target_token.owner_id))
 
 
 async def get_current_account(token: Annotated[str, Depends(oauth2_scheme)]):
