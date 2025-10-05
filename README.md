@@ -41,3 +41,6 @@
 ```
 ## 生产部署
 TODO
+
+# 维护数据库
+**每次升级时**都应使用 **[Alembic](https://alembic.sqlalchemy.org/)** 进行数据库迁移。

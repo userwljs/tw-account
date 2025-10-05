@@ -5,6 +5,7 @@ description = "一个账号系统"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.16.5",
     "email-validator>=2.3.0",
     "fastapi[standard]>=0.116.1",
     "platformdirs>=4.4.0",
