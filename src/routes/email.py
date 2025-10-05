@@ -1,5 +1,5 @@
 import datetime
-import random
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -63,7 +63,9 @@ async def email_send_verification_code(
 ):
     config = get_config()
 
-    code: str = "".join(random.choices(config.email_verification_code_alphabet, k=6))
+    code: str = "".join(
+        secrets.choice(config.email_verification_code_alphabet) for i in range(6)
+    )
     print(f"生成邮件验证码：{email}：{code}")  # TODO
     code_item = EmailVerificationCode(
         email=email,
