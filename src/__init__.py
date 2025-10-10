@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
+from queue import Queue
 
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from .config import get_config, limiter, set_session_maker
+from .config import get_config, global_share, limiter, set_session_maker
 from .routes import account, email
+from .smtp import SMTPClientFactory, SMTPConnectionPool
 from .sql import Base
 
 
@@ -18,6 +20,15 @@ async def lifespan(app: FastAPI):
     set_session_maker(session_maker)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    smtp_client_factory = SMTPClientFactory(
+        hostname=config.smtp_host,
+        use_tls=config.smtp_use_tls,
+        port=config.smtp_port,
+        username=config.smtp_username,
+        password=config.smtp_password,
+    )
+    global_share.smtp_conn_pool = SMTPConnectionPool(smtp_client_factory)
+    global_share.background_tasks = set()
     yield
 
 

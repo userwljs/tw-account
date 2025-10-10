@@ -1,7 +1,6 @@
 import uuid
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Optional, Self
 
-from fastapi import Cookie
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -23,6 +22,13 @@ class Config(BaseModel):
     jwt_es256_public_key: str
     access_token_lifespan: float = 900.0  # 15 分钟
     refresh_token_lifespan: float = 2592000.0  # 30 天
+    smtp_host: str
+    smtp_port: int = 0
+    smtp_use_tls: bool
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    email_verification_code_from_email: str  # 邮件验证码的发件人邮箱
+    email_verification_code_from_name: Optional[str] = None  # 邮件验证码的发件人名称
 
 
 class EmailDomainRestrictionInfo(BaseModel):

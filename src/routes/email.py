@@ -1,12 +1,16 @@
+import asyncio
 import datetime
 import secrets
+from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import EmailStr, Field
 
-from ..config import get_config, limiter, make_session
+from ..config import get_config, global_share, limiter, make_session
 from ..models import EmailDomainRestrictionInfo
+from ..smtp import send_message
 from ..sql import EmailVerificationCode
 
 router = APIRouter(prefix="/email")
@@ -56,7 +60,11 @@ async def email_domain_restriction_info():
     )
 
 
-@router.post("/send_verification_code", responses={400: {"description": "请求被拒绝"}})
+@router.post(
+    "/send_verification_code",
+    responses={400: {"description": "请求被拒绝"}},
+    status_code=202,
+)
 @limiter.limit("10/hour")
 async def email_send_verification_code(
     request: Request, email: Annotated[str, Depends(allowed_email)]
@@ -66,7 +74,6 @@ async def email_send_verification_code(
     code: str = "".join(
         secrets.choice(config.email_verification_code_alphabet) for i in range(6)
     )
-    print(f"生成邮件验证码：{email}：{code}")  # TODO
     code_item = EmailVerificationCode(
         email=email,
         code=code,
@@ -79,3 +86,24 @@ async def email_send_verification_code(
             await session.delete(exist)
         session.add(code_item)
         await session.commit()
+    msg = EmailMessage()
+    msg.set_content(
+        f"您的邮件验证码为：{code}，请勿透露给他人，验证码 {config.email_verification_code_lifespan:.0f} 秒内有效。"
+    )
+    msg["Subject"] = "邮件验证码"
+    msg["From"] = formataddr(
+        (
+            config.email_verification_code_from_name,
+            config.email_verification_code_from_email,
+        )
+    )
+    msg["To"] = email
+
+    task = asyncio.create_task(send_message(global_share.smtp_conn_pool, msg))
+
+    global_share.background_tasks.add(task)
+    # 重要！
+    # https://github.com/python/cpython/issues/91887
+    # https://docs.python.org/zh-cn/3/library/asyncio-task.html#asyncio.create_task
+
+    task.add_done_callback(global_share.background_tasks.discard)
