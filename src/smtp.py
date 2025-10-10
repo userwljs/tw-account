@@ -5,7 +5,6 @@ from email.message import EmailMessage
 from typing import Optional
 
 from aiosmtplib import SMTP
-from aiosmtplib.errors import SMTPServerDisconnected
 from aiosmtplib.typing import Default
 
 

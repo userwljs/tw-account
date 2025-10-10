@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from queue import Queue
 
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
