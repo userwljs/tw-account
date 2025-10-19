@@ -47,13 +47,18 @@ def set_session_maker(session_maker: async_sessionmaker):
     _session_maker = session_maker
 
 
-def _load_config():
-    global _config
+def get_data_path():
     data_path = os.getenv(
         "TW_ACCOUNT_DATA_PATH", platformdirs.user_data_path("tw-account")
     )
     if not os.path.isdir(data_path):
         os.makedirs(data_path)
+    return data_path
+
+
+def _load_config():
+    global _config
+    data_path = get_data_path()
     config_file_path = os.path.join(data_path, "config.toml")
     if not os.path.isfile(config_file_path):
         raise NotImplementedError("设置向导")

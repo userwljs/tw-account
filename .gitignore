@@ -15,3 +15,7 @@ wheels/
 # Alembic
 alembic.ini
 alembic/
+
+# Testing
+.pytest_cache
+.coverage
