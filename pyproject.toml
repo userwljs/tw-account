@@ -27,6 +27,7 @@ select = [
 [dependency-groups]
 dev = [
     "aiosmtpd>=1.4.6",
+    "aiosqlite>=0.21.0",
     "httpx>=0.28.1",
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",

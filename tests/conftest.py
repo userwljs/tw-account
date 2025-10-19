@@ -1,6 +1,4 @@
-import os
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -11,23 +9,13 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parent.parent)
 )  # 将项目根插入到导入路径里
 
-from src.config import get_data_path
 from src.models import Config
-
-
-class TestConfig(BaseModel):
-    db_conn_scheme: str
 
 
 @pytest.fixture
 def test_config(monkeypatch: pytest.MonkeyPatch):
-    data_path = get_data_path()
-    test_config_path = os.path.join(data_path, "test_config.toml")
-    if not os.path.isfile(test_config_path):
-        raise RuntimeError(f"未找到测试配置 {test_config_path}")
-    test_config = TestConfig(**tomllib.load(open(test_config_path, "rb")))
     config_instance = Config(
-        db_conn_scheme=test_config.db_conn_scheme,
+        db_conn_scheme="sqlite+aiosqlite:///:memory:",
         jwt_es256_private_key="""-----BEGIN EC PRIVATE KEY-----
 MHcCAQEEIMTYj1pha3SgiQoblXDDVxrN7XBpqW+rQm/T6ukzVDscoAoGCCqGSM49
 AwEHoUQDQgAE3LPffOhMvCyFXUIV6HFBA1yxUzMlMo5/ZpK82sZFOpUZWHTk84L3
