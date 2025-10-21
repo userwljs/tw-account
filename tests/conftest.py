@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
+from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
 
 sys.path.insert(
     0, str(Path(__file__).resolve().parent.parent)
@@ -40,10 +40,12 @@ Mo5/ZpK82sZFOpUZWHTk84L3VJljbtTHLOUVCSXxWdoWHtb7tmJcaaKDcA==
     monkeypatch.setattr("src.routes.email.get_config", mock_get_config)
     monkeypatch.setattr("src.routes.account.get_config", mock_get_config)
 
+    return config_instance
+
 
 @pytest.fixture
-def test_client(test_config):
+def test_client_with_config(test_config) -> Generator[tuple[TestClient, Config]]:
     from src import app
 
     with TestClient(app) as c:
-        yield c
+        yield c, test_config
