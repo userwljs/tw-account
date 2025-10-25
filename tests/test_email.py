@@ -1,3 +1,4 @@
+import asyncio
 import email
 import time
 from typing import Optional
@@ -5,6 +6,8 @@ from typing import Optional
 from aiosmtpd.controller import Controller
 from aiosmtpd.handlers import Message
 from aiosmtpd.smtp import Envelope
+
+import src.routes.email
 
 
 class SMTPHandlerForTesting(Message):
@@ -32,9 +35,15 @@ def test_get_email_domain_restriction_info(test_client_with_config):
     }
 
 
-def test_send_email_verification_code(test_client_with_config, monkeypatch):
-    test_client = test_client_with_config[0]
-    config = test_client_with_config[1]
+def test_email_verification_code(test_client_with_config, monkeypatch):
+    test_client, config = test_client_with_config
+
+    with monkeypatch.context() as m:
+        m.setattr(config, "email_verification_code_alphabet", "F")
+        test_client.post(
+            "/email/send_verification_code", json={"email": "receiver@example.com"}
+        )
+
     handler = SMTPHandlerForTesting()
     controller = Controller(handler, port=9901)
     controller.start()
@@ -54,33 +63,29 @@ def test_send_email_verification_code(test_client_with_config, monkeypatch):
         decode=True
     ).decode(errors="replace")
 
-    handler = SMTPHandlerForTesting()
-    controller = Controller(handler, port=9901)
-    controller.start()
+    assert not asyncio.run(
+        src.routes.email.verify_email_and_consume_code("receiver@example.com", "FFFFFF")
+    )
+    assert asyncio.run(
+        src.routes.email.verify_email_and_consume_code("receiver@example.com", "TTTTTT")
+    )
+    assert not asyncio.run(
+        src.routes.email.verify_email_and_consume_code("receiver@example.com", "TTTTTT")
+    )
 
     with monkeypatch.context() as m:
-        m.setattr(config, "restrict_email_domains", "no")
-        m.setattr(config, "email_verification_code_alphabet", "E")
-
+        m.setattr(config, "email_verification_code_lifespan", -1024.0)
         response = test_client.post(
-            "/email/send_verification_code", json={"email": "receiver@outlook.com"}
+            "/email/send_verification_code", json={"email": "receiver@example.com"}
         )
-    time.sleep(0.1)
-    assert response.status_code == 202
 
-    controller.stop()
-
-    assert handler.envelope is not None
-    assert handler.envelope.mail_from == "noreply@example.com"
-    assert handler.envelope.rcpt_tos == ["receiver@outlook.com"]
-    assert "EEEEEE" in email.message_from_bytes(handler.envelope.content).get_payload(
-        decode=True
-    ).decode(errors="replace")
+    assert not asyncio.run(
+        src.routes.email.verify_email_and_consume_code("receiver@example.com", "TTTTTT")
+    )
 
 
 def test_email_domain_restriction(test_client_with_config, monkeypatch):
-    test_client = test_client_with_config[0]
-    config = test_client_with_config[1]
+    test_client, config = test_client_with_config
 
     with monkeypatch.context() as m:
         m.setattr(config, "restrict_email_domains", "whitelist")
